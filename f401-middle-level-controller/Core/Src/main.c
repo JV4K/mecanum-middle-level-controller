@@ -18,14 +18,16 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "i2c.h"
+#include "crc.h"
+#include "dma.h"
+#include "spi.h"
 #include "tim.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "bno055_stm32.h"
-
+#include "spi_comms.h"
+#include "spi_master_controls.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -46,20 +48,16 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-bno055_vector_t v;
-float x,y,z;
+extern mosi_packet_t transmit_packet_1;
+extern miso_packet_t receive_packet_1;
+miso_packet_t valid_receive_packet_1;
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-int __io_putchar(int ch)
-{
- // Write character to ITM ch.0
- ITM_SendChar(ch);
- return(ch);
-}
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi);
 
 /* USER CODE END PFP */
 
@@ -95,26 +93,26 @@ int main(void) {
 
 	/* Initialize all configured peripherals */
 	MX_GPIO_Init();
-	MX_I2C1_Init();
+	MX_DMA_Init();
 	MX_TIM1_Init();
+	MX_TIM2_Init();
+	MX_TIM3_Init();
+	MX_TIM4_Init();
+	MX_SPI1_Init();
+	MX_CRC_Init();
 	/* USER CODE BEGIN 2 */
+	HAL_TIM_Base_Start_IT(&htim4);
 
-	HAL_GPIO_WritePin(ADDR_GPIO_Port, ADDR_Pin, 0);
-	bno055_assignI2C(&hi2c1);
-	bno055_setup();
-	bno055_setOperationModeNDOF();
+	servo_enable_system(&transmit_packet_1);
+	servo_enable(&transmit_packet_1, 1);
+	servo_enable(&transmit_packet_1, 2);
+	servo_set_timeout(&transmit_packet_1, 135);
 
 	/* USER CODE END 2 */
 
 	/* Infinite loop */
 	/* USER CODE BEGIN WHILE */
 	while (1) {
-		v = bno055_getVectorEuler();
-		x = v.x;
-		y = v.y;
-		z = v.z;
-//		printf("Heading: %.2f Roll: %.2f Pitch: %.2f\r\n", v.x, v.y, v.z);
-		HAL_Delay(1000);
 
 		/* USER CODE END WHILE */
 
@@ -139,15 +137,14 @@ void SystemClock_Config(void) {
 	/** Initializes the RCC Oscillators according to the specified parameters
 	 * in the RCC_OscInitTypeDef structure.
 	 */
-	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-	RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-	RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
+	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+	RCC_OscInitStruct.HSEState = RCC_HSE_ON;
 	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-	RCC_OscInitStruct.PLL.PLLM = 8;
-	RCC_OscInitStruct.PLL.PLLN = 84;
-	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-	RCC_OscInitStruct.PLL.PLLQ = 4;
+	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+	RCC_OscInitStruct.PLL.PLLM = 25;
+	RCC_OscInitStruct.PLL.PLLN = 336;
+	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV4;
+	RCC_OscInitStruct.PLL.PLLQ = 7;
 	if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK) {
 		Error_Handler();
 	}
@@ -167,6 +164,12 @@ void SystemClock_Config(void) {
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi) {
+	HAL_GPIO_WritePin(SS1_GPIO_Port, SS1_Pin, GPIO_PIN_SET);
+	if (master_verify_miso_packet(&receive_packet_1)) {
+		memcpy(&valid_receive_packet_1, &receive_packet_1, 32);
+	}
+}
 
 /* USER CODE END 4 */
 
